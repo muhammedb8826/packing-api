@@ -1,52 +1,52 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Material } from '../common/types';
+import { MaterialEntity } from '../entities';
+
+function toMaterial(e: MaterialEntity): Material {
+  const q = Number(e.quantityInStock);
+  const m = e.minThreshold != null ? Number(e.minThreshold) : undefined;
+  return {
+    id: e.id,
+    code: e.code,
+    name: e.name,
+    unit: e.unit,
+    quantityInStock: Number.isNaN(q) ? 0 : q,
+    minThreshold: m,
+    createdAt: e.createdAt?.toISOString?.() ?? new Date().toISOString(),
+  };
+}
 
 @Injectable()
 export class MaterialsService {
-  private materials: Material[] = [
-    {
-      id: 1,
-      code: 'MAT001',
-      name: 'Kraft board',
-      unit: 'kg',
-      quantityInStock: 500,
-      minThreshold: 100,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 2,
-      code: 'MAT002',
-      name: 'Plastic film',
-      unit: 'roll',
-      quantityInStock: 50,
-      minThreshold: 10,
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  constructor(
+    @InjectRepository(MaterialEntity)
+    private readonly repo: Repository<MaterialEntity>,
+  ) {}
 
-  findAll(): Material[] {
-    return this.materials;
+  async findAll(): Promise<Material[]> {
+    const list = await this.repo.find({ order: { id: 'ASC' } });
+    return list.map(toMaterial);
   }
 
-  findOne(id: string): Material {
+  async findOne(id: string): Promise<Material> {
     const numId = Number(id);
-    const material =
-      !Number.isNaN(numId) && typeof numId === 'number'
-        ? this.materials.find((m) => m.id === numId)
-        : this.materials.find((m) => String(m.id) === id);
-    if (!material) {
-      throw new NotFoundException(`Material ${id} not found`);
-    }
-    return material;
+    const entity =
+      !Number.isNaN(numId) && numId > 0
+        ? await this.repo.findOne({ where: { id: numId } })
+        : null;
+    if (!entity) throw new NotFoundException(`Material ${id} not found`);
+    return toMaterial(entity);
   }
 
-  update(id: string, body: Partial<Material>): Material {
-    const material = this.findOne(id);
-    const updated = { ...material, ...body };
-    const idx = this.materials.findIndex(
-      (m) => String(m.id) === id || m.id === Number(id),
-    );
-    if (idx >= 0) this.materials[idx] = updated;
-    return updated;
+  async update(id: string, body: Partial<Material>): Promise<Material> {
+    const entity = await this.repo.findOne({
+      where: { id: Number(id) },
+    });
+    if (!entity) throw new NotFoundException(`Material ${id} not found`);
+    Object.assign(entity, body);
+    await this.repo.save(entity);
+    return toMaterial(entity);
   }
 }

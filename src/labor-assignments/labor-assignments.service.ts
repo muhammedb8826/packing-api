@@ -1,38 +1,49 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { LaborAssignment } from '../common/types';
+import { LaborAssignmentEntity } from '../entities';
+
+function toAssignment(e: LaborAssignmentEntity): LaborAssignment {
+  return {
+    id: e.id,
+    jobOrderId: e.jobOrderId,
+    employeeId: e.employeeId,
+    shiftId: e.shiftId,
+    assignedAt: e.assignedAt?.toISOString?.() ?? new Date().toISOString(),
+  };
+}
 
 @Injectable()
 export class LaborAssignmentsService {
-  private assignments: LaborAssignment[] = [];
-  private nextId = 1;
+  constructor(
+    @InjectRepository(LaborAssignmentEntity)
+    private readonly repo: Repository<LaborAssignmentEntity>,
+  ) {}
 
-  findAll(jobOrderId?: string): LaborAssignment[] {
-    if (jobOrderId !== undefined && jobOrderId !== '') {
-      return this.assignments.filter(
-        (a) => String(a.jobOrderId) === String(jobOrderId),
-      );
-    }
-    return this.assignments;
+  async findAll(jobOrderId?: string): Promise<LaborAssignment[]> {
+    const where = jobOrderId ? { jobOrderId: Number(jobOrderId) } : {};
+    const list = await this.repo.find({ where, order: { id: 'ASC' } });
+    return list.map(toAssignment);
   }
 
-  create(body: Omit<LaborAssignment, 'id'>): LaborAssignment {
-    const now = new Date().toISOString();
-    const newAssignment: LaborAssignment = {
-      id: this.nextId++,
-      ...body,
-      assignedAt: (body.assignedAt as string) ?? now,
-    };
-    this.assignments.push(newAssignment);
-    return newAssignment;
+  async create(body: Omit<LaborAssignment, 'id'>): Promise<LaborAssignment> {
+    const entity = this.repo.create({
+      jobOrderId: Number(body.jobOrderId),
+      employeeId: Number(body.employeeId),
+      shiftId: Number(body.shiftId),
+      assignedAt: body.assignedAt ? new Date(body.assignedAt) : new Date(),
+    });
+    const saved = await this.repo.save(entity);
+    return toAssignment(saved);
   }
 
-  remove(id: string): void {
-    const idx = this.assignments.findIndex(
-      (a) => String(a.id) === id || a.id === Number(id),
-    );
-    if (idx < 0) {
+  async remove(id: string): Promise<void> {
+    const numId = Number(id);
+    if (Number.isNaN(numId))
       throw new NotFoundException(`LaborAssignment ${id} not found`);
-    }
-    this.assignments.splice(idx, 1);
+    const result = await this.repo.delete({ id: numId });
+    if (result.affected === 0)
+      throw new NotFoundException(`LaborAssignment ${id} not found`);
   }
 }

@@ -1,28 +1,33 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Employee } from '../common/types';
+import { EmployeeEntity } from '../entities';
+
+function toEmployee(e: EmployeeEntity): Employee {
+  const skills =
+    typeof e.skills === 'string'
+      ? e.skills.split(',').map((s) => s.trim())
+      : [];
+  return {
+    id: e.id,
+    code: e.code,
+    name: e.name,
+    skills,
+    available: e.available,
+    createdAt: e.createdAt?.toISOString?.() ?? new Date().toISOString(),
+  };
+}
 
 @Injectable()
 export class EmployeesService {
-  private employees: Employee[] = [
-    {
-      id: 1,
-      code: 'E001',
-      name: 'Alice Johnson',
-      skills: ['assembly', 'qc'],
-      available: true,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 2,
-      code: 'E002',
-      name: 'Bob Williams',
-      skills: ['packing', 'dispatch'],
-      available: true,
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  constructor(
+    @InjectRepository(EmployeeEntity)
+    private readonly repo: Repository<EmployeeEntity>,
+  ) {}
 
-  findAll(): Employee[] {
-    return this.employees;
+  async findAll(): Promise<Employee[]> {
+    const list = await this.repo.find({ order: { id: 'ASC' } });
+    return list.map(toEmployee);
   }
 }

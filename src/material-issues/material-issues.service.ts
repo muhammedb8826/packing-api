@@ -1,28 +1,40 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { MaterialIssue } from '../common/types';
+import { MaterialIssueEntity } from '../entities';
+
+function toIssue(e: MaterialIssueEntity): MaterialIssue {
+  return {
+    id: e.id,
+    jobOrderId: e.jobOrderId,
+    materialId: e.materialId,
+    quantity: Number(e.quantity),
+    issuedAt: e.issuedAt?.toISOString?.() ?? new Date().toISOString(),
+  };
+}
 
 @Injectable()
 export class MaterialIssuesService {
-  private issues: MaterialIssue[] = [];
-  private nextId = 1;
+  constructor(
+    @InjectRepository(MaterialIssueEntity)
+    private readonly repo: Repository<MaterialIssueEntity>,
+  ) {}
 
-  findAll(jobOrderId?: string): MaterialIssue[] {
-    if (jobOrderId !== undefined && jobOrderId !== '') {
-      return this.issues.filter(
-        (i) => String(i.jobOrderId) === String(jobOrderId),
-      );
-    }
-    return this.issues;
+  async findAll(jobOrderId?: string): Promise<MaterialIssue[]> {
+    const where = jobOrderId ? { jobOrderId: Number(jobOrderId) } : {};
+    const list = await this.repo.find({ where, order: { id: 'ASC' } });
+    return list.map(toIssue);
   }
 
-  create(body: Omit<MaterialIssue, 'id'>): MaterialIssue {
-    const now = new Date().toISOString();
-    const newIssue: MaterialIssue = {
-      id: this.nextId++,
-      ...body,
-      issuedAt: (body.issuedAt as string) ?? now,
-    };
-    this.issues.push(newIssue);
-    return newIssue;
+  async create(body: Omit<MaterialIssue, 'id'>): Promise<MaterialIssue> {
+    const entity = this.repo.create({
+      jobOrderId: Number(body.jobOrderId),
+      materialId: Number(body.materialId),
+      quantity: body.quantity,
+      issuedAt: body.issuedAt ? new Date(body.issuedAt) : new Date(),
+    });
+    const saved = await this.repo.save(entity);
+    return toIssue(saved);
   }
 }

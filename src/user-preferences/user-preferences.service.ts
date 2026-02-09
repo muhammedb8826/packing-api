@@ -1,65 +1,61 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { UserPreferences } from '../common/types';
+import { UserPreferenceEntity } from '../entities';
+
+function toPref(e: UserPreferenceEntity): UserPreferences {
+  return {
+    id: e.id,
+    clientId: e.clientId,
+    notificationType: e.notificationType as UserPreferences['notificationType'],
+    dashboardView: e.dashboardView as UserPreferences['dashboardView'],
+    reportingFrequency:
+      e.reportingFrequency as UserPreferences['reportingFrequency'],
+    accessLevel: e.accessLevel as UserPreferences['accessLevel'],
+    createdAt: e.createdAt?.toISOString?.() ?? new Date().toISOString(),
+    updatedAt: e.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+  };
+}
 
 @Injectable()
 export class UserPreferencesService {
-  private preferences: UserPreferences[] = [
-    {
-      id: 1,
-      clientId: 1,
-      notificationType: 'email',
-      dashboardView: 'progress',
-      reportingFrequency: 'weekly',
-      accessLevel: 'full',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
+  constructor(
+    @InjectRepository(UserPreferenceEntity)
+    private readonly repo: Repository<UserPreferenceEntity>,
+  ) {}
 
-  private nextId = 2;
-
-  findAll(clientId?: string): UserPreferences[] {
-    if (clientId !== undefined && clientId !== '') {
-      return this.preferences.filter(
-        (p) => String(p.clientId) === String(clientId),
-      );
-    }
-    return this.preferences;
+  async findAll(clientId?: string): Promise<UserPreferences[]> {
+    const where = clientId ? { clientId: Number(clientId) } : {};
+    const list = await this.repo.find({ where, order: { id: 'ASC' } });
+    return list.map(toPref);
   }
 
-  findOne(id: string): UserPreferences {
+  async update(
+    id: string,
+    body: Partial<UserPreferences>,
+  ): Promise<UserPreferences> {
     const numId = Number(id);
-    const pref =
-      !Number.isNaN(numId) && typeof numId === 'number'
-        ? this.preferences.find((p) => p.id === numId)
-        : this.preferences.find((p) => String(p.id) === id);
-    if (!pref) {
-      throw new NotFoundException(`UserPreferences ${id} not found`);
-    }
-    return pref;
+    const entity = await this.repo.findOne({
+      where: !Number.isNaN(numId) ? { id: numId } : undefined,
+    });
+    if (!entity) throw new NotFoundException(`UserPreferences ${id} not found`);
+    Object.assign(entity, body);
+    await this.repo.save(entity);
+    return toPref(entity);
   }
 
-  update(id: string, body: Partial<UserPreferences>): UserPreferences {
-    const pref = this.findOne(id);
-    const updated = { ...pref, ...body, updatedAt: new Date().toISOString() };
-    const idx = this.preferences.findIndex(
-      (p) => String(p.id) === id || p.id === Number(id),
-    );
-    if (idx >= 0) this.preferences[idx] = updated;
-    return updated;
-  }
-
-  create(
+  async create(
     body: Omit<UserPreferences, 'id' | 'createdAt' | 'updatedAt'>,
-  ): UserPreferences {
-    const now = new Date().toISOString();
-    const newPref: UserPreferences = {
-      id: this.nextId++,
-      ...body,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.preferences.push(newPref);
-    return newPref;
+  ): Promise<UserPreferences> {
+    const entity = this.repo.create({
+      clientId: Number(body.clientId),
+      notificationType: body.notificationType,
+      dashboardView: body.dashboardView,
+      reportingFrequency: body.reportingFrequency,
+      accessLevel: body.accessLevel,
+    });
+    const saved = await this.repo.save(entity);
+    return toPref(saved);
   }
 }

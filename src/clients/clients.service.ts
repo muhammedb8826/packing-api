@@ -1,44 +1,43 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Client } from '../common/types';
+import { ClientEntity } from '../entities';
+
+function toClient(e: ClientEntity): Client {
+  return {
+    id: e.id,
+    code: e.code,
+    name: e.name,
+    contact: e.contact ?? undefined,
+    email: e.email ?? undefined,
+    phone: e.phone ?? undefined,
+    address: e.address ?? undefined,
+    createdAt: e.createdAt?.toISOString?.() ?? new Date().toISOString(),
+  };
+}
 
 @Injectable()
 export class ClientsService {
-  private clients: Client[] = [
-    {
-      id: 1,
-      code: 'C001',
-      name: 'Acme Corp',
-      contact: 'John Doe',
-      email: 'john@acme.com',
-      phone: '+1 555-0100',
-      address: '123 Main St',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 2,
-      code: 'C002',
-      name: 'Beta Industries',
-      contact: 'Jane Smith',
-      email: 'jane@beta.com',
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  constructor(
+    @InjectRepository(ClientEntity)
+    private readonly repo: Repository<ClientEntity>,
+  ) {}
 
-  private nextId = 3;
-
-  findAll(): Client[] {
-    return this.clients;
+  async findAll(): Promise<Client[]> {
+    const list = await this.repo.find({ order: { id: 'ASC' } });
+    return list.map(toClient);
   }
 
-  findOne(id: string): Client {
+  async findOne(id: string): Promise<Client> {
     const numId = Number(id);
-    const client =
-      typeof numId === 'number' && !Number.isNaN(numId)
-        ? this.clients.find((c) => c.id === numId)
-        : this.clients.find((c) => String(c.id) === id);
-    if (!client) {
+    const entity =
+      !Number.isNaN(numId) && numId > 0
+        ? await this.repo.findOne({ where: { id: numId } })
+        : null;
+    if (!entity) {
       throw new NotFoundException(`Client ${id} not found`);
     }
-    return client;
+    return toClient(entity);
   }
 }

@@ -1,28 +1,42 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { ProductionLog } from '../common/types';
+import { ProductionLogEntity } from '../entities';
+
+function toLog(e: ProductionLogEntity): ProductionLog {
+  return {
+    id: e.id,
+    jobOrderId: e.jobOrderId,
+    shiftId: e.shiftId,
+    quantityProduced: e.quantityProduced,
+    notes: e.notes ?? undefined,
+    loggedAt: e.loggedAt?.toISOString?.() ?? new Date().toISOString(),
+  };
+}
 
 @Injectable()
 export class ProductionLogsService {
-  private logs: ProductionLog[] = [];
-  private nextId = 1;
+  constructor(
+    @InjectRepository(ProductionLogEntity)
+    private readonly repo: Repository<ProductionLogEntity>,
+  ) {}
 
-  findAll(jobOrderId?: string): ProductionLog[] {
-    if (jobOrderId !== undefined && jobOrderId !== '') {
-      return this.logs.filter(
-        (l) => String(l.jobOrderId) === String(jobOrderId),
-      );
-    }
-    return this.logs;
+  async findAll(jobOrderId?: string): Promise<ProductionLog[]> {
+    const where = jobOrderId ? { jobOrderId: Number(jobOrderId) } : {};
+    const list = await this.repo.find({ where, order: { id: 'ASC' } });
+    return list.map(toLog);
   }
 
-  create(body: Omit<ProductionLog, 'id'>): ProductionLog {
-    const now = new Date().toISOString();
-    const newLog: ProductionLog = {
-      id: this.nextId++,
-      ...body,
-      loggedAt: (body.loggedAt as string) ?? now,
-    };
-    this.logs.push(newLog);
-    return newLog;
+  async create(body: Omit<ProductionLog, 'id'>): Promise<ProductionLog> {
+    const entity = this.repo.create({
+      jobOrderId: Number(body.jobOrderId),
+      shiftId: Number(body.shiftId),
+      quantityProduced: body.quantityProduced ?? 0,
+      notes: body.notes ?? null,
+      loggedAt: body.loggedAt ? new Date(body.loggedAt) : new Date(),
+    });
+    const saved = await this.repo.save(entity);
+    return toLog(saved);
   }
 }
